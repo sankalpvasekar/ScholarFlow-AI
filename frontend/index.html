@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ScholarFlow AI — Research Paper Generator</title>
+  <meta name="description"
+    content="Generate publish-ready IEEE, APA, MLA, Chicago, and ACM academic papers using a 4-agent AI pipeline." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Lora:ital,wght@0,400;0,500;1,400&display=swap"
+    rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+
+  <!-- ── Header ── -->
+  <header class="header">
+    <div class="header-brand">
+      <div class="brand-logo"
+        style="width: 40px; height: 40px; border-radius: 8px; background: linear-gradient(to bottom right, var(--primary), var(--accent-purple)); display: flex; align-items: center; justify-content: center; color: white; box-shadow: var(--shadow-neon-primary);">
+        <span class="material-symbols-outlined" style="font-size: 24px;">auto_awesome</span>
+      </div>
+      <div class="brand-text" style="display: flex; flex-direction: column; justify-content: center;">
+        <span class="brand-name" style="font-size: 20px; font-weight: 700;">ScholarFlow <span
+            style="color: var(--primary);">AI</span></span>
+        <span class="brand-sub"
+          style="font-size: 10px; text-transform: uppercase; letter-spacing: 0.2em; font-weight: 500; color: var(--text-secondary);">Ultra-Premium
+          Research Suite</span>
+      </div>
+    </div>
+
+    <!-- Theme toggle -->
+    <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme" title="Switch theme">
+      <span class="toggle-track">
+        <span class="toggle-icon sun">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5" />
+            <line x1="12" y1="1" x2="12" y2="3" />
+            <line x1="12" y1="21" x2="12" y2="23" />
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+            <line x1="1" y1="12" x2="3" y2="12" />
+            <line x1="21" y1="12" x2="23" y2="12" />
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+          </svg>
+        </span>
+        <span class="toggle-icon moon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        </span>
+        <span class="toggle-thumb"></span>
+      </span>
+    </button>
+  </header>
+
+  <!-- ── Main Grid ── -->
+  <main class="main-grid">
+
+    <!-- ─── LEFT: Research Parameters ─── -->
+    <section class="card" id="paramsCard">
+      <h2 class="card-heading">Research Parameters</h2>
+
+      <form id="generateForm" autocomplete="off">
+
+        <div class="field-group">
+          <label class="field-label" for="topicInput">Research Topic</label>
+          <textarea id="topicInput" class="field-textarea"
+            placeholder="Describe your research topic in detail. e.g. A Smart Traffic Signal System using YOLOv8 and Arduino for dynamic density-based light control."
+            rows="7" required></textarea>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="formatSelect">Citation Format</label>
+          <div class="select-wrap">
+            <select id="formatSelect" class="field-select">
+              <option value="IEEE Double Column">IEEE — Engineering &amp; Computer Science</option>
+              <option value="APA Style">APA — Social Sciences &amp; Psychology</option>
+              <option value="MLA Style">MLA — Humanities &amp; Literature</option>
+              <option value="Chicago Style">Chicago / Turabian — History &amp; Business</option>
+              <option value="ACM Style">ACM — Advanced Computing &amp; IT</option>
+            </select>
+            <svg class="select-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+              stroke-width="2">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="fileUpload">📁 Upload ALL Project Files (Unlimited Code, Data, PDFs,
+            Images)</label>
+          <input type="file" id="fileUpload" class="field-textarea" style="padding: 10px; font-size: 13px;" multiple>
+        </div>
+
+        <button type="submit" class="btn-generate" id="generateBtn">
+          <span class="btn-spinner" id="btnSpinner"></span>
+          <span class="material-symbols-outlined btn-icon" id="btnIcon">rocket_launch</span>
+          <span id="btnText">GENERATE PAPER</span>
+        </button>
+
+      </form>
+    </section>
+
+    <!-- ─── CENTER: Pipeline Status ─── -->
+    <section class="card" id="pipelineCard">
+      <div style="margin-bottom: 24px;">
+        <h2 class="card-heading" style="color: white; font-size: 20px; text-transform: none; margin-bottom: 4px;">Neural
+          Pipeline</h2>
+        <p style="font-size: 13px; color: var(--text-secondary);">Monitoring multi-agent orchestration in real-time</p>
+      </div>
+
+      <div class="pipeline-steps">
+        <!-- Step 1 -->
+        <div class="step-row" id="step-planner">
+          <div class="step-num" id="num-planner" style="width: 40px; height: 40px;"><span
+              class="num-text material-symbols-outlined" style="font-size: 18px;">assignment</span></div>
+          <div class="step-body">
+            <div class="step-title" style="font-weight: 700;">Agent 01: Strategic Planner <span class="step-label"
+                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: white;">The
+                Architect</span></div>
+            <div class="step-msg" id="msg-planner">Idle</div>
+          </div>
+          <div class="step-dot" id="dot-planner"></div>
+        </div>
+        <!-- Step 2 -->
+        <div class="step-row" id="step-researcher">
+          <div class="step-num" id="num-researcher" style="width: 40px; height: 40px;"><span
+              class="num-text material-symbols-outlined" style="font-size: 18px;">travel_explore</span></div>
+          <div class="step-body">
+            <div class="step-title" style="font-weight: 700;">Agent 02: Deep Researcher <span class="step-label"
+                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: white;">The
+                Detective</span></div>
+            <div class="step-msg" id="msg-researcher">Idle</div>
+          </div>
+          <div class="step-dot" id="dot-researcher"></div>
+        </div>
+        <!-- Step 3 -->
+        <div class="step-row" id="step-context_analyst">
+          <div class="step-num" id="num-context_analyst" style="width: 40px; height: 40px;"><span
+              class="num-text material-symbols-outlined" style="font-size: 18px;">psychology</span></div>
+          <div class="step-body">
+            <div class="step-title" style="font-weight: 700;">Agent 03: Context Analyst <span class="step-label"
+                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: white;">The Brain
+                Filter</span></div>
+            <div class="step-msg" id="msg-context_analyst">Idle</div>
+          </div>
+          <div class="step-dot" id="dot-context_analyst"></div>
+        </div>
+        <!-- Step 4 -->
+        <div class="step-row" id="step-writer">
+          <div class="step-num" id="num-writer" style="width: 40px; height: 40px;"><span
+              class="num-text material-symbols-outlined" style="font-size: 18px;">edit_note</span></div>
+          <div class="step-body">
+            <div class="step-title" style="font-weight: 700;">Agent 04: Synthesis Writer <span class="step-label"
+                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: white;">The
+                Scholar</span></div>
+            <div class="step-msg" id="msg-writer">Idle</div>
+          </div>
+          <div class="step-dot" id="dot-writer"></div>
+        </div>
+        <!-- Step 5 -->
+        <div class="step-row" id="step-validator">
+          <div class="step-num" id="num-validator" style="width: 40px; height: 40px;"><span
+              class="num-text material-symbols-outlined" style="font-size: 18px;">fact_check</span></div>
+          <div class="step-body">
+            <div class="step-title" style="font-weight: 700;">Agent 05: Automated Validation <span class="step-label"
+                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: white;">Engine</span>
+            </div>
+            <div class="step-msg" id="msg-validator">Idle</div>
+          </div>
+          <div class="step-dot" id="dot-validator"></div>
+        </div>
+        <!-- Step 6 -->
+        <div class="step-row" id="step-reviewer">
+          <div class="step-num" id="num-reviewer" style="width: 40px; height: 40px;"><span
+              class="num-text material-symbols-outlined" style="font-size: 18px;">rate_review</span></div>
+          <div class="step-body">
+            <div class="step-title" style="font-weight: 700;">Agent 06: Senior Reviewer <span class="step-label"
+                style="background: rgba(255,255,255,0.1); padding: 2px 6px; border-radius: 4px; color: white;">The
+                Professor</span></div>
+            <div class="step-msg" id="msg-reviewer">Idle</div>
+          </div>
+          <div class="step-dot" id="dot-reviewer"></div>
+        </div>
+      </div>
+
+      <!-- Revision notice -->
+      <div class="revision-notice" id="revisionNotice">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+        <span id="revisionText">Revision in progress...</span>
+      </div>
+
+      <!-- Stats -->
+      <div class="stats-row">
+        <div class="stat-chip">
+          <span class="stat-val" id="statSources">—</span>
+          <span class="stat-key">Sources</span>
+        </div>
+        <div class="stat-chip">
+          <span class="stat-val" id="statRevisions">0</span>
+          <span class="stat-key">Revisions</span>
+        </div>
+        <div class="stat-chip">
+          <span class="stat-val" id="statStatus">Ready</span>
+          <span class="stat-key">Status</span>
+        </div>
+      </div>
+
+      <!-- Sources log -->
+      <div class="sources-log" id="sourcesLog"></div>
+    </section>
+
+    <!-- ─── RIGHT: Paper Preview ─── -->
+    <section class="card" id="previewCard">
+      <div class="preview-header">
+        <h2 class="card-heading" style="margin-bottom:0">Preview</h2>
+        <button class="btn-download" id="downloadBtn" onclick="downloadPDF()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Download PDF
+        </button>
+      </div>
+
+      <div class="preview-scroll" id="previewArea">
+        <div class="preview-placeholder" id="previewPlaceholder">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"
+            opacity="0.3">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+            <polyline points="10 9 9 9 8 9" />
+          </svg>
+          <p>Your generated research paper will appear here once the agents complete their work.</p>
+        </div>
+        <div class="paper-content" id="paperContent"></div>
+      </div>
+
+      <!-- Verification Panel (Hidden by default) -->
+      <div class="verification-panel" id="verificationPanel"
+        style="display: none; border-top: 2px solid var(--accent-muted); padding-top: 20px; margin-top: 20px;">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+          <span class="material-symbols-outlined" style="color: var(--accent-purple);">verified_user</span>
+          <h3 style="margin: 0; font-size: 16px; color: var(--text-main); font-weight: 700;">Verification & Feedback
+          </h3>
+        </div>
+        <textarea id="reviewFeedback" class="field-textarea"
+          placeholder="If the paper needs changes, type your human feedback here (e.g. 'Expand the conclusion', 'Fix the formatting of table 2')..."
+          rows="3" style="margin-bottom: 16px; min-height: 80px;"></textarea>
+        <div style="display: flex; gap: 12px;">
+          <button id="rejectBtn"
+            style="flex: 1; padding: 12px; background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.5); border-radius: var(--radius-btn); cursor: pointer; font-size: 13px; font-weight: 700; transition: all 0.2s; text-transform: uppercase;">Reject
+            & Rewrite</button>
+          <button id="approveBtn"
+            style="flex: 1; padding: 12px; background: var(--green); color: white; border: none; border-radius: var(--radius-btn); cursor: pointer; font-size: 13px; font-weight: 700; transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px; box-shadow: 0 4px 14px rgba(22, 163, 74, 0.4); text-transform: uppercase;">
+            <span class="material-symbols-outlined" style="font-size: 18px;">check_circle</span>
+            Approve Paper
+          </button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <script src="script.js"></script>
+</body>
+
+</html>
