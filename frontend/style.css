@@ -723,8 +723,9 @@ body {
 }
 
 .btn-download {
-  display: flex !important;
-  opacity: 0.35;
+  display: flex;
+  opacity: 0.45;
+  filter: grayscale(40%);
   pointer-events: none;
   align-items: center;
   gap: 6px;
@@ -737,13 +738,14 @@ body {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .btn-download.visible {
   opacity: 1;
+  filter: grayscale(0%);
   pointer-events: auto;
-  box-shadow: 0 0 15px rgba(32, 13, 242, 0.2);
+  box-shadow: 0 0 15px rgba(32, 13, 242, 0.3);
 }
 
 .btn-download.pdf {

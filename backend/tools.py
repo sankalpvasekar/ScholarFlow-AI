@@ -29,6 +29,11 @@ def tavily_search(query: str, max_results: int = 5) -> list[dict]:
     Returns a list of dicts: [{title, url, content}, ...]
     """
     try:
+        # Sanitize and truncate query (Max 400 per Tavily error logs)
+        query = query.replace("#", "").replace("*", "").replace("_", "").replace("`", "").strip()
+        if len(query) > 380:
+            query = query[:380]
+            
         client = _get_tavily_client()
         response = client.search(
             query=query,
@@ -102,7 +107,8 @@ def research_web(topic: str, outline: str) -> dict:
     High-level research function: searches Tavily, scrapes top URLs,
     returns structured research data with citations.
     """
-    print(f"[Researcher] Searching Tavily for: {topic}")
+    display_topic = topic[:100] + "..." if len(topic) > 100 else topic
+    print(f"[Researcher] Searching Tavily for: {display_topic}")
     search_results = tavily_search(f"peer-reviewed research {topic}", max_results=5)
 
     if not search_results:

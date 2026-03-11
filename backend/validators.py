@@ -81,57 +81,35 @@ def check_citations(draft: str) -> tuple[bool, str]:
 # ─────────────────────────────────────────────────────────────────────────────
 # 3. Fact-Checking CSV Data (HuggingFace NLI)
 # ─────────────────────────────────────────────────────────────────────────────
-_nli_pipeline = None
+from backend.agents import _invoke_with_fallback
+from langchain_core.messages import SystemMessage, HumanMessage
 
-def _get_nli_pipeline():
-    global _nli_pipeline
-    if _nli_pipeline is None:
-        from transformers import pipeline
-        # Using a fast cross-encoder fine-tuned for Natural Language Inference
-        _nli_pipeline = pipeline("text-classification", model="cross-encoder/nli-distilroberta-base")
-    return _nli_pipeline
-
-def check_facts_nli(draft: str, context: str) -> tuple[bool, str]:
+async def check_facts_llm(draft: str, context: str) -> tuple[bool, str]:
     """
-    Uses a local HuggingFace NLI model to compare claims in the draft against the raw data context.
+    Uses Qwen 2.5 via OpenRouter to verify claims in the draft against the raw data context.
     If the draft contradicts the context, it fails the verification.
     """
     if not context.strip() or "No external files were provided" in context:
         return True, "Passed (No unique project data uploaded to verify against)"
 
-    # Extract sentences from the draft
-    sentences = [s.strip() for s in re.split(r'[.?!](?:\s+|$)', draft) if len(s.strip()) > 40]
-    
-    if not sentences:
-        return True, "Passed"
+    system_prompt = """You are a strict Data Verification Engine. Your job is to fact-check an academic paper draft against the provided raw data context.
+If you find ANY claim in the draft that directly contradicts the data context, or hallucinates specific numbers/findings not present in the data, output "REJECT" followed by a short explanation of the contradiction.
+Otherwise, output "APPROVE"."""
 
-    # Sample up to 3 random sentences to represent claims
-    claims = random.sample(sentences, min(3, len(sentences)))
-    
+    messages = [
+        SystemMessage(content=system_prompt),
+        HumanMessage(content=f"Context Data:\n{context[:3000]}\n\nPaper Draft:\n{draft[:3000]}")
+    ]
+
     try:
-        pipe = _get_nli_pipeline()
-        # Truncate context heavily to avoid maximum sequence length errors in DistilRoBERTa
-        safe_context = context[:2000]
-        
-        for claim in claims:
-            # The cross-encoder takes a payload of {"text": premise, "text_pair": hypothesis}
-            # For NLI, premise = context, hypothesis = claim
-            result_list = pipe({"text": safe_context, "text_pair": claim})
-            
-            # The result varies slightly by pipeline version, typically it's dict or list of dicts.
-            # Handle both formats.
-            if isinstance(result_list, list) and len(result_list) > 0:
-                result = result_list[0]
-            else:
-                result = result_list
-
-            label = result.get('label', '').lower()
-            score = result.get('score', 0.0)
-            
-            if label == 'contradiction' and score > 0.85:
-                return False, f"Fact-Check Failed (Contradiction). The model generated a claim: '{claim}'. This mathematically/factually contradicts the CSV data or code you uploaded."
-
+        response_text = await _invoke_with_fallback(
+            messages, 
+            primary_model="qwen/qwen2.5-72b-instruct", 
+            timeout_seconds=60.0, 
+            max_tokens=800
+        )
+        if "REJECT" in response_text[:50].upper():
+            return False, f"Fact-Check Failed: {response_text}"
         return True, "Passed"
     except Exception as e:
-        # Failsafe so broken local dependencies don't crash the pipeline
-        return True, f"Fact-Check skipped due to local model error: {str(e)}"
+        return True, f"Fact-Check skipped due to API error: {str(e)}"

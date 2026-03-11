@@ -4,7 +4,8 @@
  * Academic Level field removed — only topic + format are sent.
  */
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = "http://127.0.0.1:8000";
+
 
 // ── Theme Toggle ──────────────────────────────────────────────────────────
 const themeToggle = document.getElementById("themeToggle");

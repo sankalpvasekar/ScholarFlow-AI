@@ -6,22 +6,67 @@ All 5 academic formats (IEEE, APA, MLA, Chicago, ACM) are fully supported.
 """
 import os
 import json
+import asyncio
 from langchain_groq import ChatGroq
+
 from langchain_core.messages import SystemMessage, HumanMessage
 from dotenv import load_dotenv
+
+from backend.logger import log_debug
 
 load_dotenv()
 
 
-def _get_llm(temperature: float = 0.3) -> ChatGroq:
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        raise ValueError("GROQ_API_KEY not found in environment variables.")
-    return ChatGroq(
-        model="llama-3.3-70b-versatile",
-        groq_api_key=api_key,
-        temperature=temperature,
-    )
+from langchain_openai import ChatOpenAI
+
+def _get_openrouter_llm(model_name: str, temperature: float = 0.3, timeout: float = 45.0, max_tokens: int = None):
+    openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
+    if not openrouter_api_key:
+        raise ValueError("OPENROUTER_API_KEY not found in environment variables.")
+    kwargs = {
+        "model": model_name,
+        "openai_api_key": openrouter_api_key,
+        "openai_api_base": "https://openrouter.ai/api/v1",
+        "temperature": temperature,
+        "timeout": timeout,
+        "max_retries": 0,
+    }
+    if max_tokens:
+        kwargs["max_tokens"] = max_tokens
+    return ChatOpenAI(**kwargs)
+
+async def _invoke_with_fallback(messages, primary_model: str, timeout_seconds=120.0, max_tokens=None):
+    fallback_models = [
+        "deepseek/deepseek-chat",
+        "meta-llama/llama-3-70b-instruct",
+        "mistralai/mixtral-8x7b-instruct"
+    ]
+    models_to_try = [primary_model]
+    for m in fallback_models:
+        if m != primary_model:
+            models_to_try.append(m)
+            
+    last_err = None
+    for model_name in models_to_try:
+        llm = _get_openrouter_llm(model_name, timeout=timeout_seconds, max_tokens=max_tokens)
+        try:
+            log_debug(f"Attempting OpenRouter model: {model_name}...")
+            res = await asyncio.wait_for(llm.ainvoke(messages), timeout=timeout_seconds)
+            log_debug(f"Success with {model_name}.")
+            return res.content.strip()
+        except asyncio.TimeoutError as e:
+            log_debug(f"{model_name} timed out.")
+            last_err = e
+        except Exception as e:
+            log_debug(f"{model_name} failed: {type(e).__name__} - {str(e)}")
+            last_err = e
+            
+    log_debug("All fallback models failed.")
+    raise last_err
+
+
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -93,12 +138,12 @@ def _get_format_rules(paper_format: str) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # Agent 1: THE PLANNER — "The Architect"
 # ─────────────────────────────────────────────────────────────────────────────
-def run_planner(topic: str, level: str, paper_format: str) -> str:
+async def run_planner(topic: str, level: str, paper_format: str) -> str:
     """
     Creates a detailed academic paper outline.
     Returns: A structured bullet-point outline string.
     """
-    llm = _get_llm(temperature=0.2)
+    fmt = _get_format_rules(paper_format)
     fmt = _get_format_rules(paper_format)
 
     system_prompt = f"""You are an expert Academic Planner with decades of experience in structuring \
@@ -129,22 +174,36 @@ INSTRUCTIONS:
 
 Output ONLY the structured outline. No preamble or commentary."""
 
-    response = llm.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Create the {paper_format} academic outline for: {topic}"),
-    ])
-    return response.content.strip()
+    log_debug(f"Calling Planner LLM. Topic Length: {len(topic)} chars. Format: {paper_format}")
+    
+    try:
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"Create the {paper_format} academic outline for: {topic}"),
+        ]
+        response_text = await _invoke_with_fallback(messages, primary_model="deepseek/deepseek-chat", timeout_seconds=45.0, max_tokens=1000)
+        log_debug("Planner LLM responded successfully.")
+        return response_text
+
+    except asyncio.TimeoutError:
+        log_debug("ERROR: Planner LLM timed out after 45 seconds.")
+        return f"Error: Planner generation timed out. The topic might be too long ({len(topic)} chars) or the API is unresponsive."
+    except Exception as e:
+        log_debug(f"ERROR: Planner LLM failed: {str(e)}")
+        return f"Error: Planner generation failed: {str(e)}"
+
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Agent 2: THE RESEARCHER — "The Detective"
 # ─────────────────────────────────────────────────────────────────────────────
-def run_researcher(topic: str, outline: str, raw_research: dict) -> str:
+async def run_researcher(topic: str, outline: str, raw_research: dict) -> str:
     """
     Synthesizes raw web-scraped data into structured research notes and checks for novelty.
     Returns: A JSON string containing 'research_data', 'novelty_alert' (bool), and 'matching_citation' (str).
     """
-    llm = _get_llm(temperature=0.1)
 
     sources_text = ""
     for i, source in enumerate(raw_research.get("sources", []), 1):
@@ -187,20 +246,32 @@ Respond ONLY in this exact JSON format:
   "matching_citation": "Citation of matching paper or empty string"
 }}"""
 
-    response = llm.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Synthesize research data and check for novelty for: {topic}"),
-    ])
-    return response.content.strip()
+    log_debug(f"Calling Researcher LLM. Topic: {topic[:50]}...")
+    try:
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"Synthesize research data and check for novelty for: {topic}"),
+        ]
+        response_text = await _invoke_with_fallback(messages, primary_model="mistralai/mixtral-8x7b-instruct", timeout_seconds=60.0, max_tokens=2000)
+        log_debug("Researcher LLM responded successfully.")
+        return response_text
+
+    except asyncio.TimeoutError:
+        log_debug("ERROR: Researcher LLM timed out after 60 seconds.")
+        return json.dumps({"research_data": "Error: Researcher timed out.", "novelty_alert": False, "matching_citation": ""})
+    except Exception as e:
+        log_debug(f"ERROR: Researcher LLM failed: {str(e)}")
+        return json.dumps({"research_data": f"Error: Researcher failed: {str(e)}", "novelty_alert": False, "matching_citation": ""})
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Agent 3: THE CONTEXT ANALYST — "The Brain Filter"
 # ─────────────────────────────────────────────────────────────────────────────
-def run_context_analyst(topic: str, compiled_project_data: str) -> str:
+async def run_context_analyst(topic: str, compiled_project_data: str) -> str:
     """
     Synthesizes massive unstructured user uploads (code, CSV data, notes)
     into a structured 'Master Investigation Document'.
     """
-    llm = _get_llm(temperature=0.0)  # zero temperature for pure factual extraction
 
     system_prompt = f"""You are a Senior Systems Architect and Lead Data Scientist.
 The user is writing an academic research paper on: '{topic}'.
@@ -233,17 +304,30 @@ Do NOT write the actual research paper. Do NOT use flowery language. Output only
 technical specifications. The Writer Agent will use your output to draft the final academic \
 methodology and results sections."""
 
-    response = llm.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Synthesize the file data for the unique project: {topic}"),
-    ])
-    return response.content.strip()
+    log_debug(f"Calling Context Analyst LLM. Topic: {topic[:50]}...")
+    try:
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"Synthesize the file data for the unique project: {topic}"),
+        ]
+        response_text = await _invoke_with_fallback(messages, primary_model="meta-llama/llama-3-8b-instruct", timeout_seconds=90.0, max_tokens=2000)
+        log_debug("Context Analyst LLM responded successfully.")
+        return response_text
+
+    except asyncio.TimeoutError:
+        log_debug("ERROR: Context Analyst LLM timed out after 90 seconds.")
+        return "Error: Context analysis timed out. The project data might be too large."
+    except Exception as e:
+        log_debug(f"ERROR: Context Analyst LLM failed: {str(e)}")
+        return f"Error: Context analysis failed: {str(e)}"
+
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Agent 4: THE WRITER — "The Scholar"
 # ─────────────────────────────────────────────────────────────────────────────
-def run_writer(
+async def run_writer(
     topic: str,
     level: str,
     paper_format: str,
@@ -256,7 +340,6 @@ def run_writer(
     Writes the full academic paper draft or revises based on reviewer feedback.
     Returns: Complete paper in Markdown format.
     """
-    llm = _get_llm(temperature=0.5)
     fmt = _get_format_rules(paper_format)
 
     revision_context = ""
@@ -315,17 +398,29 @@ Special rules: {fmt['special_rules']}
 
 Output the COMPLETE paper in Markdown, starting with the paper title as # Title."""
 
-    response = llm.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Write the complete {paper_format} academic paper on: {topic}"),
-    ])
-    return response.content.strip()
+    log_debug(f"Calling Writer LLM. Topic: {topic[:50]}...")
+    try:
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"Write the complete {paper_format} academic paper on: {topic}"),
+        ]
+        response_text = await _invoke_with_fallback(messages, primary_model="meta-llama/llama-3-70b-instruct", timeout_seconds=120.0, max_tokens=4000)
+        log_debug("Writer LLM responded successfully.")
+        return response_text
+
+    except asyncio.TimeoutError:
+        log_debug("ERROR: Writer LLM timed out after 120 seconds.")
+        return "# Error: Draft generation timed out.\nThe Topic or context data might be too large for the model to process in one go."
+    except Exception as e:
+        log_debug(f"ERROR: Writer LLM failed: {str(e)}")
+        return f"# Error: Draft generation failed.\n{str(e)}"
+
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Agent 4: THE REVIEWER — "The Strict Professor"
 # ─────────────────────────────────────────────────────────────────────────────
-def run_reviewer(
+async def run_reviewer(
     draft: str,
     level: str,
     paper_format: str,
@@ -335,7 +430,6 @@ def run_reviewer(
     Evaluates the paper draft against quality criteria.
     Returns: {"verdict": "APPROVE" | "REJECT", "feedback": "..."}
     """
-    llm = _get_llm(temperature=0.1)
     fmt = _get_format_rules(paper_format)
 
     system_prompt = f"""You are a strict Peer Reviewer for a top-tier academic journal. \
@@ -370,26 +464,47 @@ Respond ONLY in this exact JSON format (no extra text):
 specific issues with exact section names and what must be fixed."
 }}"""
 
-    response = llm.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=f"""Review this {paper_format} paper draft for {level} level:
+    log_debug(f"Calling Reviewer LLM for {paper_format} draft...")
+    try:
+        messages = [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=f"""Review this {paper_format} paper draft for {level} level:
 
 {draft[:6000]}"""),
-    ])
+        ]
+        raw = await _invoke_with_fallback(messages, primary_model="anthropic/claude-3-haiku", timeout_seconds=60.0, max_tokens=1000)
+        log_debug("Reviewer LLM responded successfully.")
 
-    raw = response.content.strip()
-
-    if "```json" in raw:
-        raw = raw.split("```json")[1].split("```")[0].strip()
-    elif "```" in raw:
-        raw = raw.split("```")[1].split("```")[0].strip()
+    except asyncio.TimeoutError:
+        log_debug("ERROR: Reviewer LLM timed out after 60 seconds.")
+        return {"verdict": "APPROVE", "feedback": "Reviewer timed out. Assuming approval to continue."}
+    except Exception as e:
+        log_debug(f"ERROR: Reviewer LLM failed: {str(e)}")
+        return {"verdict": "APPROVE", "feedback": f"Reviewer failed: {str(e)}. Assuming approval."}
 
     try:
+        if "```json" in raw:
+            raw = raw.split("```json")[1].split("```")[0].strip()
+        elif "```" in raw:
+            raw = raw.split("```")[1].split("```")[0].strip()
+            
         result = json.loads(raw)
-        result["verdict"] = result.get("verdict", "REJECT").upper()
+        if isinstance(result, list) and len(result) > 0:
+            result = result[0]
+            
+        if not isinstance(result, dict):
+            raise ValueError("Parsed JSON is not a dictionary.")
+            
+        v = result.get("verdict", "REJECT")
+        if isinstance(v, str):
+            result["verdict"] = v.upper()
+        else:
+            result["verdict"] = "REJECT"
+            
         if result["verdict"] not in ("APPROVE", "REJECT"):
             result["verdict"] = "REJECT"
         return result
-    except json.JSONDecodeError:
+    except Exception as e:
         verdict = "APPROVE" if "APPROVE" in raw.upper() else "REJECT"
         return {"verdict": verdict, "feedback": raw}
+

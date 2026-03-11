@@ -9,7 +9,9 @@ from langgraph.graph import StateGraph, END
 
 from backend.tools import research_web
 from backend.agents import run_planner, run_researcher, run_context_analyst, run_writer, run_reviewer
-from backend.validators import check_complexity, check_citations, check_facts_nli
+from backend.validators import check_complexity, check_citations, check_facts_llm
+from backend.logger import log_debug
+
 
 MAX_REVISIONS = 3
 
@@ -44,9 +46,11 @@ class ResearchState(TypedDict):
 # ─────────────────────────────────────────────────────────────────────────────
 # Node Functions
 # ─────────────────────────────────────────────────────────────────────────────
-def planner_node(state: ResearchState) -> ResearchState:
+async def planner_node(state: ResearchState) -> ResearchState:
+    log_debug("Entering planner_node")
     if state.get("is_revision"):
         return state
+
 
     print("[Graph] Running Planner Agent...")
     state["events"] = state.get("events", []) + [{
@@ -55,12 +59,14 @@ def planner_node(state: ResearchState) -> ResearchState:
         "message": "📝 The Planner is structuring the outline..."
     }]
 
-    outline = run_planner(
+    outline = await run_planner(
         topic=state["topic"],
         level=state["level"],
         paper_format=state["paper_format"],
     )
+    log_debug("run_planner returned.")
     state["outline"] = outline
+
 
     state["events"].append({
         "step": "planner",
@@ -70,7 +76,8 @@ def planner_node(state: ResearchState) -> ResearchState:
     return state
 
 
-def researcher_node(state: ResearchState) -> ResearchState:
+
+async def researcher_node(state: ResearchState) -> ResearchState:
     if state.get("is_revision"):
         return state
 
@@ -82,8 +89,12 @@ def researcher_node(state: ResearchState) -> ResearchState:
     })
 
     # Step 1: Scrape the web
-    raw_research = research_web(topic=state["topic"], outline=state["outline"])
+    loop = asyncio.get_event_loop()
+    raw_research = await loop.run_in_executor(
+        None, research_web, state["topic"], state["outline"]
+    )
     state["raw_research"] = raw_research
+
 
     # Emit URLs found
     urls = raw_research.get("urls", [])
@@ -95,7 +106,7 @@ def researcher_node(state: ResearchState) -> ResearchState:
         })
 
     # Step 2: Synthesize research data with LLM
-    raw_output = run_researcher(
+    raw_output = await run_researcher(
         topic=state["topic"],
         outline=state["outline"],
         raw_research=raw_research,
@@ -111,6 +122,12 @@ def researcher_node(state: ResearchState) -> ResearchState:
             clean_json = clean_json.split("```")[1].split("```")[0].strip()
             
         data = json.loads(clean_json)
+        if isinstance(data, list) and len(data) > 0:
+            data = data[0]
+            
+        if not isinstance(data, dict):
+            raise ValueError("Parsed JSON is not a dictionary.")
+            
         state["research_data"] = data.get("research_data", "")
         state["novelty_alert"] = data.get("novelty_alert", False)
         state["matching_citation"] = data.get("matching_citation", "")
@@ -138,7 +155,8 @@ def researcher_node(state: ResearchState) -> ResearchState:
     return state
 
 
-def context_analyst_node(state: ResearchState) -> ResearchState:
+
+async def context_analyst_node(state: ResearchState) -> ResearchState:
     # Skip only if we already have the summary AND it's a revision 
     # (prevents re-running if we are just fixing the draft)
     if state.get("is_revision") and state.get("unique_project_summary") and "No external files were provided" not in state["unique_project_summary"]:
@@ -152,7 +170,7 @@ def context_analyst_node(state: ResearchState) -> ResearchState:
     })
 
     if state.get("compiled_project_data"):
-        summary = run_context_analyst(
+        summary = await run_context_analyst(
             topic=state["topic"],
             compiled_project_data=state["compiled_project_data"]
         )
@@ -173,7 +191,8 @@ def context_analyst_node(state: ResearchState) -> ResearchState:
     return state
 
 
-def writer_node(state: ResearchState) -> ResearchState:
+
+async def writer_node(state: ResearchState) -> ResearchState:
     revision_count = state.get("revision_count", 0)
     feedback = state.get("reviewer_feedback", "")
 
@@ -192,7 +211,7 @@ def writer_node(state: ResearchState) -> ResearchState:
             "message": "✍️ The Writer is drafting the paper..."
         })
 
-    draft = run_writer(
+    draft = await run_writer(
         topic=state["topic"],
         level=state["level"],
         paper_format=state["paper_format"],
@@ -211,12 +230,22 @@ def writer_node(state: ResearchState) -> ResearchState:
     return state
 
 
-def automated_validator_node(state: ResearchState) -> ResearchState:
+
+async def automated_validator_node(state: ResearchState) -> ResearchState:
     print("[Graph] Running Automated Validator Node...")
     
     draft = state.get("draft", "")
     context = state.get("unique_project_summary", "")
     
+    if draft.startswith("# Error"):
+        state["automated_feedback"] = "fatal_error"
+        state["events"].append({
+            "step": "validator",
+            "status": "rejected",
+            "message": f"❌ {draft.splitlines()[0]}"
+        })
+        return state
+
     state["events"].append({
         "step": "validator",
         "status": "active",
@@ -237,11 +266,12 @@ def automated_validator_node(state: ResearchState) -> ResearchState:
         state["events"].append({"step": "validator", "status": "rejected", "message": f"❌ {msg_cit}"})
         return state
 
-    # 3. Fact-Checking NLI
-    passed_nli, msg_nli = check_facts_nli(draft, context)
-    if not passed_nli:
-        state["automated_feedback"] = f"Automated Check Failed (Fact-Check): {msg_nli}"
-        state["events"].append({"step": "validator", "status": "rejected", "message": f"❌ {msg_nli}"})
+    # 3. Fact-Checking NLI with LLM (Qwen 2.5)
+    passed_llm, msg_llm = await check_facts_llm(draft, context)
+    
+    if not passed_llm:
+        state["automated_feedback"] = f"Automated Check Failed (Fact-Check): {msg_llm}"
+        state["events"].append({"step": "validator", "status": "rejected", "message": f"❌ {msg_llm}"})
         return state
 
     state["automated_feedback"] = ""
@@ -253,7 +283,8 @@ def automated_validator_node(state: ResearchState) -> ResearchState:
     return state
 
 
-def reviewer_node(state: ResearchState) -> ResearchState:
+
+async def reviewer_node(state: ResearchState) -> ResearchState:
     print("[Graph] Running Reviewer Agent...")
     state["events"].append({
         "step": "reviewer",
@@ -261,7 +292,7 @@ def reviewer_node(state: ResearchState) -> ResearchState:
         "message": "🧐 The Reviewer is evaluating quality..."
     })
 
-    result = run_reviewer(
+    result = await run_reviewer(
         draft=state["draft"],
         level=state["level"],
         paper_format=state["paper_format"],
@@ -287,6 +318,7 @@ def reviewer_node(state: ResearchState) -> ResearchState:
     return state
 
 
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Conditional Edge — Reviewer Decision
 # ─────────────────────────────────────────────────────────────────────────────
@@ -308,6 +340,9 @@ def reviewer_decision(state: ResearchState) -> str:
 def automated_decision(state: ResearchState) -> str:
     feedback = state.get("automated_feedback", "")
     revision_count = state.get("revision_count", 0)
+
+    if feedback == "fatal_error":
+        return "abort"
 
     if not feedback:
         return "passed"
@@ -362,6 +397,7 @@ def build_graph() -> StateGraph:
         {
             "passed": "reviewer",
             "failed": "writer",
+            "abort": END,
         }
     )
 
@@ -429,6 +465,8 @@ async def run_pipeline_stream(
     async for event in graph.astream_events(initial_state, version="v2"):
         kind = event.get("event")
         name = event.get("name")
+        log_debug(f"LangGraph Event: {kind} | Name: {name}")
+
         
         # When a node starts, we can immediately signal the UI
         if kind == "on_chain_start" and name in ["planner", "researcher", "context_analyst", "writer", "automated_validator", "reviewer"]:
