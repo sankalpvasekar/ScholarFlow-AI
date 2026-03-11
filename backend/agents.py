@@ -6,20 +6,20 @@ All 5 academic formats (IEEE, APA, MLA, Chicago, ACM) are fully supported.
 """
 import os
 import json
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-def _get_llm(temperature: float = 0.3) -> ChatGoogleGenerativeAI:
-    api_key = os.getenv("GEMINI_API_KEY")
+def _get_llm(temperature: float = 0.3) -> ChatGroq:
+    api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
-        raise ValueError("GEMINI_API_KEY not found in environment variables.")
-    return ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
-        google_api_key=api_key,
+        raise ValueError("GROQ_API_KEY not found in environment variables.")
+    return ChatGroq(
+        model="llama-3.3-70b-versatile",
+        groq_api_key=api_key,
         temperature=temperature,
     )
 

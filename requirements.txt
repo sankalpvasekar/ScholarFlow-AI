@@ -17,3 +17,4 @@ textstat
 transformers
 torch
 datasets
+langchain-groq
