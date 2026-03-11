@@ -49,6 +49,11 @@ const revisionNotice = document.getElementById("revisionNotice");
 const revisionText = document.getElementById("revisionText");
 const sourcesLog = document.getElementById("sourcesLog");
 
+const noveltyPanel = document.getElementById("noveltyPanel");
+const noveltyMsg = document.getElementById("noveltyMsg");
+const customNotes = document.getElementById("customNotes");
+const resumeBtn = document.getElementById("resumeBtn");
+
 const statSources = document.getElementById("statSources");
 const statRevisions = document.getElementById("statRevisions");
 const statStatus = document.getElementById("statStatus");
@@ -89,7 +94,9 @@ function resetAllSteps() {
     paperContent.innerHTML = "";
     downloadBtn.classList.remove("visible");
     verificationPanel.style.display = "none";
+    noveltyPanel.style.display = "none";
     reviewFeedback.value = "";
+    customNotes.value = "";
     currentDraft = "";
 }
 
@@ -134,6 +141,15 @@ function handleProgress(data) {
         revisionNotice.classList.remove("visible");
     }
 
+    // Novelty Alert handling
+    if (step === "researcher" && status === "rejected" && data.novelty_data) {
+        noveltyPanel.style.display = "block";
+        noveltyMsg.textContent = `An exact match to your proposed methodology was found (${data.novelty_data.citation}). Please add a new variable (e.g., cost, environment, comparison) to your Custom Notes to differentiate your work.`;
+        previewPlaceholder.style.display = "none";
+        statStatus.textContent = "Novelty Alert";
+        setBtnLoading(false);
+    }
+
     // Log URLs
     if (step === "researcher" && message.includes("🔗")) {
         const urls = message.match(/https?:\/\/[^\s,]+/g) || [];
@@ -169,6 +185,7 @@ function handleComplete(data) {
 
     if (currentDraft) {
         previewPlaceholder.style.display = "none";
+        noveltyPanel.style.display = "none";
         paperContent.style.display = "block";
         paperContent.innerHTML = renderMarkdown(currentDraft);
 
@@ -313,6 +330,57 @@ rejectBtn.addEventListener("click", async () => {
         revisionNotice.classList.add("visible");
         revisionText.textContent = `Error: ${err.message}`;
         setStep("writer", "rejected", `Error: ${err.message}`);
+    } finally {
+        setBtnLoading(false);
+    }
+});
+
+// ── Novelty Resume Handler ────────────────────────────────────────────────
+resumeBtn.addEventListener("click", async () => {
+    const notes = customNotes.value.trim();
+    if (!notes) {
+        alert("Please add some custom notes or a new variable to differentiate your work.");
+        return;
+    }
+
+    noveltyPanel.style.display = "none";
+    statStatus.textContent = "Resuming...";
+    setBtnLoading(true);
+
+    // Reset steps after researcher
+    ["context_analyst", "writer", "validator", "reviewer"].forEach(s => setStep(s, "pending", STEP_DEFAULTS[s]));
+    setStep("context_analyst", "active", "Analyzing project with custom notes...");
+
+    // We use /revise but we want it to continue from where it left off.
+    // We'll append the custom notes to the topic or pass them as feedback.
+    const payload = {
+        topic: `${topicInput.value.trim()} [CUSTOM NOTES: ${notes}]`,
+        level: "Academic",
+        format: currentFormat,
+        compiled_project_data: currentState.compiled_project_data || "",
+        outline: currentState.outline || "",
+        raw_research: currentState.raw_research || {},
+        research_data: currentState.research_data || "",
+        unique_project_summary: currentState.unique_project_summary || "",
+        draft: currentState.draft || "",
+        reviewer_feedback: "" // Not a rejection, just a continuation
+    };
+
+    try {
+        const response = await fetch(`${API_BASE}/revise`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+
+        await processSSE(response);
+
+    } catch (err) {
+        console.error("[Resume]", err);
+        statStatus.textContent = "Error";
+        revisionNotice.classList.add("visible");
+        revisionText.textContent = `Error: ${err.message}`;
+        setStep("context_analyst", "rejected", `Error: ${err.message}`);
     } finally {
         setBtnLoading(false);
     }

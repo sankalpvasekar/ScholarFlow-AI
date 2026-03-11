@@ -141,9 +141,8 @@ Output ONLY the structured outline. No preamble or commentary."""
 # ─────────────────────────────────────────────────────────────────────────────
 def run_researcher(topic: str, outline: str, raw_research: dict) -> str:
     """
-    Synthesizes raw web-scraped data into structured research notes.
-    raw_research: output from tools.research_web()
-    Returns: A comprehensive research summary string with citations.
+    Synthesizes raw web-scraped data into structured research notes and checks for novelty.
+    Returns: A JSON string containing 'research_data', 'novelty_alert' (bool), and 'matching_citation' (str).
     """
     llm = _get_llm(temperature=0.1)
 
@@ -162,8 +161,10 @@ Full Text (excerpt):
 incredibly meticulous, deeply curious, and completely fact-driven. \
 You only work with evidence you can directly cite.
 
-Your task: Synthesize the following web-scraped research data into a \
-comprehensive, structured research brief for the Writer Agent.
+Your task:
+1. Synthesize the following web-scraped research data into a comprehensive, structured research brief.
+2. NOVELTY CHECK: Compare the user's proposed topic and methodology (from the outline) against the sources. 
+   If any source is a "95% match" or an exact match to the proposed methodology, set 'novelty_alert' to true and provide the citation.
 
 PAPER OUTLINE TO SUPPORT:
 {outline}
@@ -172,22 +173,25 @@ RAW SOURCES FROM THE WEB:
 {sources_text}
 
 INSTRUCTIONS:
-1. Extract ALL relevant facts, data points, statistics, formulas, quotes, \
-and findings from the sources above.
+1. Extract ALL relevant facts, data points, statistics, formulas, quotes, and findings.
 2. Match each fact to the relevant section of the outline.
-3. Label each extracted fact with: [TITLE_OF_SOURCE, YEAR_IF_AVAILABLE, URL] — \
-   the Writer will use this to format the correct citation style.
-4. Identify key concepts, methodologies used in existing work, and contradictory findings.
-5. Flag any critical gaps where the outline has no supporting evidence.
-6. DO NOT invent or hallucinate any data. Only report what is in the provided sources.
+3. Label each extracted fact with: [TITLE_OF_SOURCE, YEAR_IF_AVAILABLE, URL].
+4. Identify key concepts, methodologies, and contradictory findings.
+5. NOVELTY ALERT: If a source (e.g., Wang, 2023) already implements the proposed methodology, flag it.
 
-Output a structured research brief organized by paper section, \
-with a numbered reference list at the end."""
+OUTPUT FORMAT:
+Respond ONLY in this exact JSON format:
+{{
+  "research_data": "the full structured research brief text here...",
+  "novelty_alert": true or false,
+  "matching_citation": "Citation of matching paper or empty string"
+}}"""
 
     response = llm.invoke([
         SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Synthesize the research data for the paper on: {topic}"),
+        HumanMessage(content=f"Synthesize research data and check for novelty for: {topic}"),
     ])
+    return response.content.strip()
 # ─────────────────────────────────────────────────────────────────────────────
 # Agent 3: THE CONTEXT ANALYST — "The Brain Filter"
 # ─────────────────────────────────────────────────────────────────────────────

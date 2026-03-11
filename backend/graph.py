@@ -28,6 +28,8 @@ class ResearchState(TypedDict):
     outline: str
     raw_research: dict
     research_data: str
+    novelty_alert: bool
+    matching_citation: str
     unique_project_summary: str
     draft: str
     automated_feedback: str
@@ -93,23 +95,53 @@ def researcher_node(state: ResearchState) -> ResearchState:
         })
 
     # Step 2: Synthesize research data with LLM
-    research_data = run_researcher(
+    raw_output = run_researcher(
         topic=state["topic"],
         outline=state["outline"],
         raw_research=raw_research,
     )
-    state["research_data"] = research_data
+    
+    # Parse JSON output
+    try:
+        import json
+        clean_json = raw_output
+        if "```json" in clean_json:
+            clean_json = clean_json.split("```json")[1].split("```")[0].strip()
+        elif "```" in clean_json:
+            clean_json = clean_json.split("```")[1].split("```")[0].strip()
+            
+        data = json.loads(clean_json)
+        state["research_data"] = data.get("research_data", "")
+        state["novelty_alert"] = data.get("novelty_alert", False)
+        state["matching_citation"] = data.get("matching_citation", "")
+    except Exception as e:
+        print(f"[Graph] Error parsing Researcher output: {e}")
+        state["research_data"] = raw_output
+        state["novelty_alert"] = False
+        state["matching_citation"] = ""
 
-    state["events"].append({
-        "step": "researcher",
-        "status": "done",
-        "message": f"✅ Research complete. {len(urls)} sources analyzed.",
-    })
+    if state.get("novelty_alert"):
+        state["events"].append({
+            "step": "researcher",
+            "status": "rejected",
+            "message": f"⚠️ Novelty Alert: Exact match found ({state['matching_citation']}).",
+            "novelty_data": {
+                "citation": state["matching_citation"]
+            }
+        })
+    else:
+        state["events"].append({
+            "step": "researcher",
+            "status": "done",
+            "message": f"✅ Research complete. {len(urls)} sources analyzed.",
+        })
     return state
 
 
 def context_analyst_node(state: ResearchState) -> ResearchState:
-    if state.get("is_revision"):
+    # Skip only if we already have the summary AND it's a revision 
+    # (prevents re-running if we are just fixing the draft)
+    if state.get("is_revision") and state.get("unique_project_summary") and "No external files were provided" not in state["unique_project_summary"]:
         return state
 
     print("[Graph] Running Context Analyst Agent...")
@@ -273,7 +305,6 @@ def reviewer_decision(state: ResearchState) -> str:
     state["revision_count"] = revision_count + 1
     return "rejected"
 
-
 def automated_decision(state: ResearchState) -> str:
     feedback = state.get("automated_feedback", "")
     revision_count = state.get("revision_count", 0)
@@ -291,6 +322,12 @@ def automated_decision(state: ResearchState) -> str:
     return "failed"
 
 
+def researcher_decision(state: ResearchState) -> str:
+    if state.get("novelty_alert"):
+        return "alert"
+    return "continue"
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Build the Graph
 # ─────────────────────────────────────────────────────────────────────────────
@@ -306,7 +343,16 @@ def build_graph() -> StateGraph:
 
     workflow.set_entry_point("planner")
     workflow.add_edge("planner", "researcher")
-    workflow.add_edge("researcher", "context_analyst")
+    
+    workflow.add_conditional_edges(
+        "researcher",
+        researcher_decision,
+        {
+            "alert": END,
+            "continue": "context_analyst",
+        }
+    )
+    
     workflow.add_edge("context_analyst", "writer")
     workflow.add_edge("writer", "automated_validator")
     
@@ -355,6 +401,8 @@ async def run_pipeline_stream(
         "outline": kwargs.get("outline", ""),
         "raw_research": kwargs.get("raw_research", {}),
         "research_data": kwargs.get("research_data", ""),
+        "novelty_alert": kwargs.get("novelty_alert", False),
+        "matching_citation": kwargs.get("matching_citation", ""),
         "unique_project_summary": kwargs.get("unique_project_summary", ""),
         "draft": kwargs.get("draft", ""),
         "automated_feedback": "",
@@ -381,6 +429,8 @@ async def run_pipeline_stream(
             "outline": final_state.get("outline", ""),
             "raw_research": final_state.get("raw_research", {}),
             "research_data": final_state.get("research_data", ""),
+            "novelty_alert": final_state.get("novelty_alert", False),
+            "matching_citation": final_state.get("matching_citation", ""),
             "unique_project_summary": final_state.get("unique_project_summary", ""),
             "compiled_project_data": final_state.get("compiled_project_data", ""),
             "sources": final_state.get("raw_research", {}).get("sources", []),
