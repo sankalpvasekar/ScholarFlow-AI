@@ -39,6 +39,7 @@ const btnText = document.getElementById("btnText");
 const paperContent = document.getElementById("paperContent");
 const previewArea = document.getElementById("previewArea");
 const downloadBtn = document.getElementById("downloadBtn");
+const downloadWordBtn = document.getElementById("downloadWordBtn");
 
 const verificationPanel = document.getElementById("verificationPanel");
 const reviewFeedback = document.getElementById("reviewFeedback");
@@ -93,6 +94,7 @@ function resetAllSteps() {
     paperContent.style.display = "none";
     paperContent.innerHTML = "";
     downloadBtn.classList.remove("visible");
+    downloadWordBtn.classList.remove("visible");
     verificationPanel.style.display = "none";
     noveltyPanel.style.display = "none";
     reviewFeedback.value = "";
@@ -165,6 +167,42 @@ function handleProgress(data) {
         const m = message.match(/(\d+)\s+source/);
         if (m) statSources.textContent = m[1];
     }
+
+    // 4. Update agent animation state
+    const currentStepRow = document.getElementById(`step-${step}`);
+    if (status === "active") {
+        // Remove active from others, set to this one
+        document.querySelectorAll(".step-row").forEach(row => {
+            if (row.id !== `step-${step}` && row.classList.contains("active")) {
+                row.classList.remove("active");
+                // If it was already working, mark it done if it's a previous step
+                const rowStep = row.id.replace('step-', '');
+                if (STEPS.indexOf(rowStep) < STEPS.indexOf(step)) {
+                    row.classList.add("done");
+                }
+            }
+        });
+        currentStepRow?.classList.add("active");
+        currentStepRow?.classList.remove("done", "pending");
+    } else if (status === "done") {
+        currentStepRow?.classList.remove("active", "pending");
+        currentStepRow?.classList.add("done");
+    }
+
+    // 5. Update overall status
+    const statusMap = {
+        "planner": "Planning...",
+        "researcher": "Searching...",
+        "context_analyst": "Analyzing Files...",
+        "writer": "Writing Draft...",
+        "validator": "Validating...",
+        "reviewer": "Reviewing..."
+    };
+    if (status === "active" && statusMap[step]) {
+        statStatus.textContent = statusMap[step];
+    }
+    
+    if (step === "writer") previewArea.scrollTop = 0;
 }
 
 // ── Complete event handler ────────────────────────────────────────────────
@@ -173,15 +211,19 @@ function handleComplete(data) {
     currentDraft = currentState.draft || "";
 
     statRevisions.textContent = currentState.revisions || 0;
-    statStatus.textContent = "Ready for Review";
+    statStatus.textContent = "Finished";
     if (currentState.sources?.length) statSources.textContent = currentState.sources.length;
 
     STEPS.forEach(s => {
         const row = document.getElementById(`step-${s}`);
-        if (row && !row.classList.contains("done") && !row.classList.contains("rejected")) {
-            setStep(s, "done", "Complete");
+        if (row && (row.classList.contains("active") || row.classList.contains("pending"))) {
+            row.classList.add("done");
+            row.classList.remove("active", "pending");
         }
     });
+    
+    downloadBtn.classList.add("visible");
+    downloadWordBtn.classList.add("visible");
 
     if (currentDraft) {
         previewPlaceholder.style.display = "none";
@@ -192,6 +234,7 @@ function handleComplete(data) {
         // Show Human Verification instead of direct download
         verificationPanel.style.display = "block";
         downloadBtn.classList.remove("visible");
+        downloadWordBtn.classList.remove("visible");
 
         previewArea.scrollTop = 0;
 
@@ -245,6 +288,7 @@ form.addEventListener("submit", async (e) => {
     currentFormat = format;
     setBtnLoading(true);
     resetAllSteps();
+    statStatus.textContent = "Starting...";
 
     // Send via FormData to support unlimited files
     const formData = new FormData();
@@ -284,6 +328,7 @@ form.addEventListener("submit", async (e) => {
 approveBtn.addEventListener("click", () => {
     verificationPanel.style.display = "none";
     downloadBtn.classList.add("visible");
+    downloadWordBtn.classList.add("visible");
     statStatus.textContent = "Done ✓";
 });
 
@@ -296,6 +341,8 @@ rejectBtn.addEventListener("click", async () => {
 
     verificationPanel.style.display = "none";
     statStatus.textContent = "Revising...";
+    downloadBtn.classList.remove("visible");
+    downloadWordBtn.classList.remove("visible");
     setBtnLoading(true);
 
     // Reset steps after context analyst for the rewrite loop
@@ -386,6 +433,35 @@ resumeBtn.addEventListener("click", async () => {
     }
 });
 
+// ── Download Word ────────────────────────────────────────────────────────
+async function downloadWord() {
+    if (!currentDraft) return;
+    try {
+        downloadWordBtn.disabled = true;
+        const resp = await fetch(`${API_BASE}/download-docx`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                content: currentDraft,
+                title: currentTitle || "Research_Paper"
+            }),
+        });
+
+        if (!resp.ok) throw new Error("Export failed");
+
+        const blob = await resp.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${currentTitle || "research_paper"}.docx`;
+        a.click();
+    } catch (err) {
+        alert("Word export failed: " + err.message);
+    } finally {
+        downloadWordBtn.disabled = false;
+    }
+}
+
 // ── PDF Download ──────────────────────────────────────────────────────────
 async function downloadPDF() {
     if (!currentDraft) return;
@@ -410,7 +486,7 @@ async function downloadPDF() {
     } catch (err) {
         alert(`PDF download failed: ${err.message}\n\nNote: WeasyPrint requires GTK3 on Windows. See README.md.`);
     } finally {
-        downloadBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> Download PDF';
+        downloadBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> PDF';
         downloadBtn.disabled = false;
     }
 }

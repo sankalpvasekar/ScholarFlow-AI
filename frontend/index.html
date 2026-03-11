@@ -226,14 +226,25 @@
     <section class="card" id="previewCard">
       <div class="preview-header">
         <h2 class="card-heading" style="margin-bottom:0">Preview</h2>
-        <button class="btn-download" id="downloadBtn" onclick="downloadPDF()">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
-          </svg>
-          Download PDF
-        </button>
+        <div class="btn-download-row">
+          <button class="btn-download pdf" id="downloadBtn" onclick="downloadPDF()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            PDF
+          </button>
+          <button class="btn-download word" id="downloadWordBtn" onclick="downloadWord()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="12" y1="18" x2="12" y2="12" />
+              <line x1="9" y1="15" x2="15" y2="15" />
+            </svg>
+            Word
+          </button>
+        </div>
       </div>
 
       <div class="preview-scroll" id="previewArea">

@@ -57,6 +57,10 @@ class DownloadPDFRequest(BaseModel):
     format: str = "IEEE Double Column"
     title: str = "research_paper"
 
+class DownloadWordRequest(BaseModel):
+    content: str
+    title: str = "research_paper"
+
 
 class ReviseRequest(BaseModel):
     topic: str
@@ -100,8 +104,8 @@ async def generate_paper(
     """
     if not topic.strip():
         raise HTTPException(status_code=400, detail="Topic cannot be empty.")
-    if len(topic) > 500:
-        raise HTTPException(status_code=400, detail="Topic too long (max 500 chars).")
+    if len(topic) > 10000:
+        raise HTTPException(status_code=400, detail="Topic too long (max 10000 chars).")
 
     # 1. Compile all uploaded files into one massive string
     compiled_project_data = ""
@@ -254,12 +258,46 @@ async def download_pdf(request: DownloadPDFRequest):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# POST /download-docx — Word generation endpoint
+# ─────────────────────────────────────────────────────────────────────────────
+@app.post("/download-docx")
+async def download_docx(request: DownloadWordRequest):
+    """
+    Accepts Markdown content and returns a formatted DOCX binary.
+    """
+    if not request.content.strip():
+        raise HTTPException(status_code=400, detail="Content cannot be empty.")
+
+    try:
+        from backend.doc_generator import generate_docx
+        loop = asyncio.get_event_loop()
+        doc_bytes = await loop.run_in_executor(
+            None, generate_docx, request.content, request.title
+        )
+        
+        filename = f"{request.title.replace(' ', '_')}.docx"
+        return Response(
+            content=doc_bytes.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"'
+            }
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Word generation failed: {str(e)}"
+        )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # GET /health — Sanity check
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/health")
 async def health():
     return {
         "status": "ok",
+        "groq_key_set": bool(os.getenv("GROQ_API_KEY")),
         "gemini_key_set": bool(os.getenv("GEMINI_API_KEY")),
         "tavily_key_set": bool(os.getenv("TAVILY_API_KEY")),
     }

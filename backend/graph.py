@@ -412,29 +412,83 @@ async def run_pipeline_stream(
         "events": [],
     }
 
-    # Run graph in thread pool to not block event loop
-    loop = asyncio.get_event_loop()
-    final_state = await loop.run_in_executor(None, graph.invoke, initial_state)
-
-    # Yield all accumulated events
-    for event in final_state.get("events", []):
-        yield {"type": "progress", "data": event}
-        await asyncio.sleep(0)  # Yield control
-
-    # Final result
+    # Run graph using astream_events to get granular updates
+    # We yield a "Starting" event immediately
     yield {
-        "type": "complete",
+        "type": "progress", 
         "data": {
-            "draft": final_state.get("draft", ""),
-            "outline": final_state.get("outline", ""),
-            "raw_research": final_state.get("raw_research", {}),
-            "research_data": final_state.get("research_data", ""),
-            "novelty_alert": final_state.get("novelty_alert", False),
-            "matching_citation": final_state.get("matching_citation", ""),
-            "unique_project_summary": final_state.get("unique_project_summary", ""),
-            "compiled_project_data": final_state.get("compiled_project_data", ""),
-            "sources": final_state.get("raw_research", {}).get("sources", []),
-            "verdict": final_state.get("reviewer_result", {}).get("verdict", ""),
-            "revisions": final_state.get("revision_count", 0),
+            "step": "planner", 
+            "status": "pending", 
+            "message": "Initializing Neural Pipeline..."
         }
     }
+
+    emitted_count = 0
+    final_state = None
+
+    async for event in graph.astream_events(initial_state, version="v2"):
+        kind = event.get("event")
+        name = event.get("name")
+        
+        # When a node starts, we can immediately signal the UI
+        if kind == "on_chain_start" and name in ["planner", "researcher", "context_analyst", "writer", "automated_validator", "reviewer"]:
+            node_map = {
+                "planner": "planner",
+                "researcher": "researcher",
+                "context_analyst": "context_analyst",
+                "writer": "writer",
+                "automated_validator": "validator",
+                "reviewer": "reviewer"
+            }
+            step = node_map.get(name)
+            if step:
+                yield {
+                    "type": "progress",
+                    "data": {
+                        "step": step,
+                        "status": "active",
+                        "message": f"Agent {name} is starting..."
+                    }
+                }
+        
+        # When a node finishes, we check for new events added to the state
+        elif kind == "on_chain_end" and name == "LangGraph":
+            final_state = event.get("data", {}).get("output")
+
+        # Periodically check state for progress events appended by nodes
+        if kind.startswith("on_chain_"):
+            data = event.get("data", {})
+            # Some event types include the state update
+            output = data.get("output")
+            if isinstance(output, dict) and "events" in output:
+                current_events = output["events"]
+                while emitted_count < len(current_events):
+                    yield {"type": "progress", "data": current_events[emitted_count]}
+                    emitted_count += 1
+                    await asyncio.sleep(0.05)
+
+    # Yield all accumulated events that might have been missed
+    if final_state and "events" in final_state:
+        current_events = final_state["events"]
+        while emitted_count < len(current_events):
+            yield {"type": "progress", "data": current_events[emitted_count]}
+            emitted_count += 1
+
+    # Final result
+    if final_state:
+        yield {
+            "type": "complete",
+            "data": {
+                "draft": final_state.get("draft", ""),
+                "outline": final_state.get("outline", ""),
+                "raw_research": final_state.get("raw_research", {}),
+                "research_data": final_state.get("research_data", ""),
+                "novelty_alert": final_state.get("novelty_alert", False),
+                "matching_citation": final_state.get("matching_citation", ""),
+                "unique_project_summary": final_state.get("unique_project_summary", ""),
+                "compiled_project_data": final_state.get("compiled_project_data", ""),
+                "sources": final_state.get("raw_research", {}).get("sources", []),
+                "verdict": final_state.get("reviewer_result", {}).get("verdict", ""),
+                "revisions": final_state.get("revision_count", 0),
+            }
+        }
