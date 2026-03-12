@@ -1,6 +1,6 @@
 # ScholarFlow AI — Python Dependencies
 fastapi
-uvicorn[standard]
+uvicorn
 python-dotenv
 langgraph
 langchain-core
@@ -18,4 +18,3 @@ python-docx
 huggingface_hub
 langchain-openai
 langchain-anthropic
-langchain-google-genai
