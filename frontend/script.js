@@ -4,7 +4,7 @@
  * Academic Level field removed — only topic + format are sent.
  */
 
-const API_BASE = "http://127.0.0.1:8000";
+const API_BASE = window.location.origin;
 
 
 // ── Theme Toggle ──────────────────────────────────────────────────────────
