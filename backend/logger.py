@@ -1,7 +1,7 @@
 import datetime
 import os
 
-LOG_FILE = os.path.join(os.getcwd(), "scholarflow_debug.log")
+LOG_FILE = os.path.join("/tmp", "scholarflow_debug.log")
 
 def log_debug(message):
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
