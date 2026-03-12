@@ -16,3 +16,5 @@ textstat
 langchain-groq
 python-docx
 huggingface_hub
+langchain-openai
+langchain-anthropic
