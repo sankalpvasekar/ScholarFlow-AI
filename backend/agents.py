@@ -25,11 +25,11 @@ def _get_gemini_llm(temperature: float = 0.3, timeout: float = 60.0, max_tokens:
     if not api_key:
         raise ValueError("GEMINI_API_KEY not found in environment variables.")
     kwargs = {
-        "model": "gemini-1.5-flash",
+        "model": "gemini-flash-latest",
         "google_api_key": api_key,
         "temperature": temperature,
-        "timeout": timeout,
-        "max_retries": 1,
+        "convert_system_message_to_human": True,
+        "max_retries": 2,
     }
     if max_tokens:
         kwargs["max_tokens"] = max_tokens
@@ -51,41 +51,38 @@ def _get_openrouter_llm(model_name: str, temperature: float = 0.3, timeout: floa
         kwargs["max_tokens"] = max_tokens
     return ChatOpenAI(**kwargs)
 
-async def _invoke_with_fallback(messages, primary_model: str = "gemini-1.5-flash", timeout_seconds=120.0, max_tokens=None):
+async def _invoke_with_fallback(messages, primary_model: str = "gemini-flash-latest", timeout_seconds=120.0, max_tokens=None):
     """
-    Attempts to use Gemini 1.5 Flash first for maximum speed.
-    Falls back to OpenRouter models if Gemini fails.
+    Attempts to use the requested primary model first.
+    Falls back to secondary models if the primary fails.
     """
-    # 1. Try Gemini first (Fastest)
-    try:
-        log_debug("Attempting primary LLM: Gemini 1.5 Flash...")
-        llm = _get_gemini_llm(timeout=timeout_seconds, max_tokens=max_tokens)
-        res = await asyncio.wait_for(llm.ainvoke(messages), timeout=timeout_seconds)
-        log_debug("Success with Gemini 1.5 Flash.")
-        return res.content.strip()
-    except Exception as e:
-        log_debug(f"Gemini failed: {type(e).__name__} - {str(e)}. Falling back to OpenRouter...")
-
-    # 2. OpenRouter Fallbacks
-    fallback_models = [
+    # Combined model order for maximum reliability
+    models_to_try = [primary_model] + [
+        "groq/llama-3.3-70b-versatile",
         "deepseek/deepseek-chat",
-        "meta-llama/llama-3-70b-instruct",
-        "mistralai/mixtral-8x7b-instruct"
+        "anthropic/claude-3-haiku",
+        "google/gemini-flash-1.5"
     ]
     
     last_err = None
-    for model_name in fallback_models:
-        llm = _get_openrouter_llm(model_name, timeout=timeout_seconds, max_tokens=max_tokens)
+    for model_name in models_to_try:
         try:
-            log_debug(f"Attempting OpenRouter fallback: {model_name}...")
+            log_debug(f"Attempting LLM: {model_name}...")
+            
+            if "groq/" in model_name.lower():
+                from langchain_groq import ChatGroq
+                api_key = os.getenv("GROQ_API_KEY")
+                llm = ChatGroq(model=model_name.replace("groq/", ""), groq_api_key=api_key, temperature=0.3)
+            elif "gemini" in model_name.lower() and "google/" not in model_name:
+                llm = _get_gemini_llm(max_tokens=max_tokens)
+            else:
+                llm = _get_openrouter_llm(model_name, timeout=timeout_seconds, max_tokens=max_tokens)
+                
             res = await asyncio.wait_for(llm.ainvoke(messages), timeout=timeout_seconds)
-            log_debug(f"Success with fallback {model_name}.")
+            log_debug(f"Success with {model_name}.")
             return res.content.strip()
-        except asyncio.TimeoutError as e:
-            log_debug(f"{model_name} timed out.")
-            last_err = e
         except Exception as e:
-            log_debug(f"{model_name} failed: {type(e).__name__} - {str(e)}")
+            log_debug(f"Model {model_name} failed: {type(e).__name__} - {str(e)}")
             last_err = e
             
     log_debug("All primary and fallback models failed.")
