@@ -218,46 +218,6 @@ async def revise_paper(request: ReviseRequest):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# POST /download-pdf — PDF generation endpoint
-# ─────────────────────────────────────────────────────────────────────────────
-@app.post("/download-pdf")
-async def download_pdf(request: DownloadPDFRequest):
-    """
-    Accepts Markdown content and returns a formatted PDF binary.
-    """
-    if not request.content.strip():
-        raise HTTPException(status_code=400, detail="Content cannot be empty.")
-
-    try:
-        from backend.pdf_generator import generate_pdf
-        loop = asyncio.get_event_loop()
-        pdf_bytes = await loop.run_in_executor(
-            None, generate_pdf, request.content, request.format
-        )
-
-        safe_title = "".join(c for c in request.title if c.isalnum() or c in " _-").strip()
-        filename = f"{safe_title or 'research_paper'}.pdf"
-
-        return Response(
-            content=pdf_bytes,
-            media_type="application/pdf",
-            headers={
-                "Content-Disposition": f'attachment; filename="{filename}"'
-            }
-        )
-    except ImportError as e:
-        raise HTTPException(
-            status_code=503,
-            detail=f"PDF generation unavailable: {str(e)}"
-        )
-    except RuntimeError as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"PDF generation failed: {str(e)}"
-        )
-
-
-# ─────────────────────────────────────────────────────────────────────────────
 # POST /download-docx — Word generation endpoint
 # ─────────────────────────────────────────────────────────────────────────────
 @app.post("/download-docx")

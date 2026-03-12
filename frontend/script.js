@@ -39,7 +39,6 @@ const btnText = document.getElementById("btnText");
 
 const paperContent = document.getElementById("paperContent");
 const previewArea = document.getElementById("previewArea");
-const downloadBtn = document.getElementById("downloadBtn");
 const downloadWordBtn = document.getElementById("downloadWordBtn");
 
 const verificationPanel = document.getElementById("verificationPanel");
@@ -94,7 +93,6 @@ function resetAllSteps() {
     previewPlaceholder.style.display = "flex";
     paperContent.style.display = "none";
     paperContent.innerHTML = "";
-    downloadBtn.classList.remove("visible");
     downloadWordBtn.classList.remove("visible");
     verificationPanel.style.display = "none";
     noveltyPanel.style.display = "none";
@@ -223,7 +221,6 @@ function handleComplete(data) {
         }
     });
     
-    downloadBtn.classList.add("visible");
     downloadWordBtn.classList.add("visible");
 
     if (currentDraft) {
@@ -234,7 +231,6 @@ function handleComplete(data) {
 
         // Show Human Verification instead of direct download
         verificationPanel.style.display = "block";
-        downloadBtn.classList.remove("visible");
         downloadWordBtn.classList.remove("visible");
 
         previewArea.scrollTop = 0;
@@ -328,7 +324,6 @@ form.addEventListener("submit", async (e) => {
 // ── Manual Review Handlers ────────────────────────────────────────────────
 approveBtn.addEventListener("click", () => {
     verificationPanel.style.display = "none";
-    downloadBtn.classList.add("visible");
     downloadWordBtn.classList.add("visible");
     statStatus.textContent = "Done ✓";
 });
@@ -342,7 +337,6 @@ rejectBtn.addEventListener("click", async () => {
 
     verificationPanel.style.display = "none";
     statStatus.textContent = "Revising...";
-    downloadBtn.classList.remove("visible");
     downloadWordBtn.classList.remove("visible");
     setBtnLoading(true);
 
@@ -463,31 +457,3 @@ async function downloadWord() {
     }
 }
 
-// ── PDF Download ──────────────────────────────────────────────────────────
-async function downloadPDF() {
-    if (!currentDraft) return;
-    downloadBtn.textContent = "Generating…";
-    downloadBtn.disabled = true;
-
-    try {
-        const res = await fetch(`${API_BASE}/download-pdf`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ content: currentDraft, format: currentFormat, title: currentTitle }),
-        });
-        if (!res.ok) { const e = await res.json(); throw new Error(e.detail || "Failed"); }
-
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = `${currentTitle}.pdf`;
-        document.body.appendChild(a); a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
-    } catch (err) {
-        alert(`PDF download failed: ${err.message}\n\nNote: WeasyPrint requires GTK3 on Windows. See README.md.`);
-    } finally {
-        downloadBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> PDF';
-        downloadBtn.disabled = false;
-    }
-}

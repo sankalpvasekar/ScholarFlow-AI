@@ -9,13 +9,10 @@ langchain-community
 tavily-python
 beautifulsoup4
 requests
-weasyprint
 markdown
 python-multipart
 pandas
 textstat
-transformers
-torch
-datasets
 langchain-groq
 python-docx
+huggingface_hub

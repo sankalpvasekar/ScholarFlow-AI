@@ -1,0 +1,7 @@
+venv/
+.env
+scholarflow_debug.log
+test_out.txt
+*.docx
+*.pdf
+__pycache__/
