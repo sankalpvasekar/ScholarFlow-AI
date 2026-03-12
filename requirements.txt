@@ -18,3 +18,4 @@ python-docx
 huggingface_hub
 langchain-openai
 langchain-anthropic
+langchain-google-genai

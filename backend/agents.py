@@ -17,7 +17,23 @@ from backend.logger import log_debug
 load_dotenv()
 
 
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
+
+def _get_gemini_llm(temperature: float = 0.3, timeout: float = 60.0, max_tokens: int = None):
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY not found in environment variables.")
+    kwargs = {
+        "model": "gemini-1.5-flash",
+        "google_api_key": api_key,
+        "temperature": temperature,
+        "timeout": timeout,
+        "max_retries": 1,
+    }
+    if max_tokens:
+        kwargs["max_tokens"] = max_tokens
+    return ChatGoogleGenerativeAI(**kwargs)
 
 def _get_openrouter_llm(model_name: str, temperature: float = 0.3, timeout: float = 45.0, max_tokens: int = None):
     openrouter_api_key = os.getenv("OPENROUTER_API_KEY")
@@ -35,24 +51,35 @@ def _get_openrouter_llm(model_name: str, temperature: float = 0.3, timeout: floa
         kwargs["max_tokens"] = max_tokens
     return ChatOpenAI(**kwargs)
 
-async def _invoke_with_fallback(messages, primary_model: str, timeout_seconds=120.0, max_tokens=None):
+async def _invoke_with_fallback(messages, primary_model: str = "gemini-1.5-flash", timeout_seconds=120.0, max_tokens=None):
+    """
+    Attempts to use Gemini 1.5 Flash first for maximum speed.
+    Falls back to OpenRouter models if Gemini fails.
+    """
+    # 1. Try Gemini first (Fastest)
+    try:
+        log_debug("Attempting primary LLM: Gemini 1.5 Flash...")
+        llm = _get_gemini_llm(timeout=timeout_seconds, max_tokens=max_tokens)
+        res = await asyncio.wait_for(llm.ainvoke(messages), timeout=timeout_seconds)
+        log_debug("Success with Gemini 1.5 Flash.")
+        return res.content.strip()
+    except Exception as e:
+        log_debug(f"Gemini failed: {type(e).__name__} - {str(e)}. Falling back to OpenRouter...")
+
+    # 2. OpenRouter Fallbacks
     fallback_models = [
         "deepseek/deepseek-chat",
         "meta-llama/llama-3-70b-instruct",
         "mistralai/mixtral-8x7b-instruct"
     ]
-    models_to_try = [primary_model]
-    for m in fallback_models:
-        if m != primary_model:
-            models_to_try.append(m)
-            
+    
     last_err = None
-    for model_name in models_to_try:
+    for model_name in fallback_models:
         llm = _get_openrouter_llm(model_name, timeout=timeout_seconds, max_tokens=max_tokens)
         try:
-            log_debug(f"Attempting OpenRouter model: {model_name}...")
+            log_debug(f"Attempting OpenRouter fallback: {model_name}...")
             res = await asyncio.wait_for(llm.ainvoke(messages), timeout=timeout_seconds)
-            log_debug(f"Success with {model_name}.")
+            log_debug(f"Success with fallback {model_name}.")
             return res.content.strip()
         except asyncio.TimeoutError as e:
             log_debug(f"{model_name} timed out.")
@@ -61,7 +88,7 @@ async def _invoke_with_fallback(messages, primary_model: str, timeout_seconds=12
             log_debug(f"{model_name} failed: {type(e).__name__} - {str(e)}")
             last_err = e
             
-    log_debug("All fallback models failed.")
+    log_debug("All primary and fallback models failed.")
     raise last_err
 
 

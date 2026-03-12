@@ -285,7 +285,8 @@ form.addEventListener("submit", async (e) => {
     currentFormat = format;
     setBtnLoading(true);
     resetAllSteps();
-    statStatus.textContent = "Starting...";
+    statStatus.textContent = "Initializing...";
+    setStep("planner", "active", "Initializing Neural Pipeline...");
 
     // Send via FormData to support unlimited files
     const formData = new FormData();

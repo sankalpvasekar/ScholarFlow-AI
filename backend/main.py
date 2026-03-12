@@ -144,15 +144,19 @@ async def generate_paper(
         try:
             from backend.graph import run_pipeline_stream
 
-            async for event in run_pipeline_stream(
+            # 1. Create the pipeline generator
+            pipeline = run_pipeline_stream(
                 topic=topic,
                 level=level,
                 paper_format=format,
                 compiled_project_data=compiled_project_data,
-            ):
+            )
+
+            # 2. Iterate manually to allow heartbeat injection
+            async for event in pipeline:
                 data = json.dumps(event)
                 yield f"data: {data}\n\n"
-                await asyncio.sleep(0)  # Flush to client
+                await asyncio.sleep(0.01)  # Minimal sleep to allow context switching
 
         except Exception as e:
             error_event = json.dumps({
@@ -166,7 +170,9 @@ async def generate_paper(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            "Transfer-Encoding": "chunked",
         }
     )
 
@@ -183,7 +189,7 @@ async def revise_paper(request: ReviseRequest):
         try:
             from backend.graph import run_pipeline_stream
 
-            async for event in run_pipeline_stream(
+            pipeline = run_pipeline_stream(
                 topic=request.topic,
                 level=request.level,
                 paper_format=request.format,
@@ -195,10 +201,12 @@ async def revise_paper(request: ReviseRequest):
                 unique_project_summary=request.unique_project_summary,
                 draft=request.draft,
                 reviewer_feedback=request.reviewer_feedback,
-            ):
+            )
+
+            async for event in pipeline:
                 data = json.dumps(event)
                 yield f"data: {data}\n\n"
-                await asyncio.sleep(0)  # Flush to client
+                await asyncio.sleep(0.01)
 
         except Exception as e:
             error_event = json.dumps({
@@ -212,7 +220,9 @@ async def revise_paper(request: ReviseRequest):
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
+            "Transfer-Encoding": "chunked",
         }
     )
 
