@@ -1,6 +1,10 @@
 # ScholarFlow AI 🧠🔬
 **Ultra-Premium Multi-Agent Academic Research Suite**
 
+## 🎥 YouTube Demo link below👇
+
+[![Watch the Demo](https://img.youtube.com/vi/cx81KbycpIU/maxresdefault.jpg)](https://youtu.be/cx81KbycpIU)
+
 ScholarFlow AI is a decentralized, multi-agent AI system designed to autonomously generate publication-ready academic research papers. It combines deep web scraping, unlimited file context ingestion, and an orchestrated team of specialized AI agents to plan, research, write, and rigorously validate academic literature.
 
 ![Stitch Premium UI](frontend/style.css) *(Themed with a bespoke glassmorphic cyber-core UI)*
@@ -83,5 +87,3 @@ The frontend uses a custom premium **Stitch** generated design featuring:
 - **Frosted Glassmorphism:** actively blurs the background.
 - **Neon Accents:** Material Symbol icons that pulse when active.
 
-## 📄 License
-MIT License
